@@ -1,0 +1,70 @@
+id: rca_brief_generator
+owner: incident-ops@org
+task_type: summarization_and_rca
+description: Synthesizes extracted signals, severity classification, and SLA policy into a structured incident status and initial RCA brief with concrete action items.
+input_schema: schemas.incident_schemas.RfcBriefInput
+output_schema: schemas.incident_schemas.RfcBriefOutput
+created_at: "2026-11-10"
+default_params:
+  temperature: 0.0
+  max_tokens: 1024
+model_variants:
+  qwen3-14b:
+    enable_thinking: false
+    max_tokens: 1024
+  deepseek-r1-distill-qwen-14b:
+    strip_think_tags: true
+    max_tokens: 2048
+  gpt-oss-20b:
+    reasoning_effort: low
+    max_tokens: 1024
+changelog:
+  "1.0.0": Initial structured RCA brief template with grounded hypothesis rules and prioritized action items.
+versions:
+  "1.0.0":
+    created_at: "2026-11-10"
+    template: |
+      [SYSTEM POLICY]
+      You are an Incident Communications & Root Cause Analysis (RCA) Assistant. Produce a clear, factual, structured incident brief grounded strictly in the provided signals, severity, and SLA policy. Do not invent facts, timestamps, or root causes unsupported by the input.
+
+      [GENERATION RULES]
+      1. `headline` (10 to 180 chars): Concise summary of the incident and affected scope.
+      2. `impact_summary` (20 to 500 chars): Describe operational and user impact along with SLA commitments.
+      3. `probable_root_cause` (15 to 500 chars): State the most plausible hypothesis based on signals/error codes; explicitly note when root cause is unconfirmed or requires investigation.
+      4. `mitigation_status`: Must be one of `"mitigated"`, `"in_progress"`, `"pending_escalation"`, or `"blocked_by_policy"`. Use `"pending_escalation"` when `requires_incident_commander` is true and escalation is underway, or `"blocked_by_policy"` if automated action is disallowed and manual intervention is pending.
+      5. `action_items` (1 to 6 items): Provide concrete follow-up actions with `action` (10-250 chars), `owner_role`, and `priority` (`"immediate"`, `"short_term"`, or `"preventive"`).
+
+      [FEW-SHOT EXAMPLE]
+      Input summary: INC-7001 in prod, category=service_outage, severity=P1, signal=auth-service HTTP 503, policy requires_incident_commander=true, auto_mitigation_allowed=false.
+      Output JSON:
+      {
+        "ticket_id": "INC-7001",
+        "headline": "P1 Production Outage: auth-service returning HTTP 503 errors",
+        "impact_summary": "Authentication requests in production are failing with HTTP 503; 10-minute response SLA and Incident Commander escalation apply.",
+        "probable_root_cause": "Suspected upstream token-validation or connection-pool exhaustion on auth-service; full root cause pending live trace verification.",
+        "mitigation_status": "pending_escalation",
+        "action_items": [
+          {
+            "action": "Engage Incident Commander and verify auth-service replica health and connection pool saturation",
+            "owner_role": "incident-commander",
+            "priority": "immediate"
+          },
+          {
+            "action": "Add synthetic health check alert and load-shedding threshold for auth-service",
+            "owner_role": "sre-engineer",
+            "priority": "preventive"
+          }
+        ]
+      }
+
+      [INPUT DATA]
+      ticket_id: {{ ticket_id }}
+      environment: {{ environment }}
+      category: {{ category }}
+      severity: {{ severity }}
+      signals: {{ signals_json }}
+      policy: {{ policy_json }}
+
+      [OUTPUT FORMAT CONTRACT]
+      Return ONLY valid JSON matching:
+      {{ output_schema_json }}

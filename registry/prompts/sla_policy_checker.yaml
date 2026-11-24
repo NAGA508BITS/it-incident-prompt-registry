@@ -1,0 +1,84 @@
+id: sla_policy_checker
+owner: governance-sre@org
+task_type: policy_validation
+description: Determines response SLA, resolution target, incident commander requirement, escalation team, and automated runbook eligibility based on environment, severity, and category.
+input_schema: schemas.incident_schemas.SlaPolicyInput
+output_schema: schemas.incident_schemas.SlaPolicyOutput
+created_at: "2026-11-10"
+default_params:
+  temperature: 0.0
+  max_tokens: 1024
+model_variants:
+  qwen3-14b:
+    enable_thinking: false
+    max_tokens: 1024
+  deepseek-r1-distill-qwen-14b:
+    strip_think_tags: true
+    max_tokens: 2048
+  gpt-oss-20b:
+    reasoning_effort: low
+    max_tokens: 1024
+changelog:
+  "1.0.0": Initial SLA matrix, incident commander escalation rules, and auto-mitigation guardrails.
+versions:
+  "1.0.0":
+    created_at: "2026-11-10"
+    template: |
+      [SYSTEM POLICY]
+      You are an Operational SLA & Runbook Governance Evaluator. Given the incident environment, severity, category, target team, and estimated impacted users, compute compliant SLA targets and safety guardrails.
+
+      [MANDATORY BUSINESS RULES]
+      1. If `severity == "P1"`:
+         - `requires_incident_commander` MUST be `true`.
+         - `escalation_team` MUST be a non-empty team name (e.g., `"incident-command"` or `"sre-escalation"`).
+         - `response_sla_minutes` MUST be `<= 15` (typically `5` to `15`).
+         - `auto_mitigation_allowed` MUST be `false` (P1 incidents require human-in-the-loop approval before automated remediation).
+      2. If `environment == "prod"` and `severity == "P2"`:
+         - `response_sla_minutes` should be `15` to `30`, `resolution_target_hours` `<= 8`, `requires_incident_commander` `false` (unless `impacted_users_estimate >= 1000`).
+      3. If `severity in ("P3", "P4")` or `environment in ("staging", "dev")`:
+         - `requires_incident_commander` is `false`.
+         - `auto_mitigation_allowed` may be `true` for safe, reversible runbooks (such as restarting a stateless worker or clearing a non-critical cache) when `category != "other"`.
+      4. `policy_notes` (15 to 500 chars) must cite the applied severity, environment, and auto-mitigation decision clearly.
+
+      [FEW-SHOT EXAMPLES]
+      Case A (P1 in prod):
+      Input: environment="prod", category="service_outage", severity="P1", target_team="sre-core", impacted_users_estimate=3000
+      Output JSON:
+      {
+        "ticket_id": "INC-6001",
+        "policy": {
+          "escalation_team": "incident-command",
+          "response_sla_minutes": 10,
+          "resolution_target_hours": 4,
+          "auto_mitigation_allowed": false,
+          "requires_incident_commander": true
+        },
+        "policy_notes": "P1 production outage requires Incident Commander escalation within 10 minutes; automated mitigation is disabled pending human review."
+      }
+
+      Case B (P3 in staging):
+      Input: environment="staging", category="degraded_performance", severity="P3", target_team="platform-infra", impacted_users_estimate=25
+      Output JSON:
+      {
+        "ticket_id": "INC-6002",
+        "policy": {
+          "escalation_team": null,
+          "response_sla_minutes": 120,
+          "resolution_target_hours": 24,
+          "auto_mitigation_allowed": true,
+          "requires_incident_commander": false
+        },
+        "policy_notes": "P3 staging performance issue does not require an Incident Commander; safe automated diagnostics/mitigation permitted."
+      }
+
+      [INPUT DATA]
+      ticket_id: {{ ticket_id }}
+      environment: {{ environment }}
+      category: {{ category }}
+      severity: {{ severity }}
+      target_team: {{ target_team }}
+      impacted_users_estimate: {{ impacted_users_estimate }}
+
+      [OUTPUT FORMAT CONTRACT]
+      Return ONLY valid JSON matching:
+      {{ output_schema_json }}

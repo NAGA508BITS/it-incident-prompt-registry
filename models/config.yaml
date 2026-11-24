@@ -1,0 +1,47 @@
+defaults:
+  temperature: 0.0
+  seed: 42
+  timeout_seconds: 60
+
+models:
+  qwen3-14b:
+    family: qwen
+    model_id: "qwen/qwen3-14b"
+    provider: "openrouter" # or "ollama", "together", "groq", "vllm"
+    base_url_env: "LLM_BASE_URL"
+    api_key_env: "LLM_API_KEY"
+    quantisation: "FP8 / BF16 (provider-managed)"
+    hardware: "Hosted cloud GPU cluster (record exact endpoint/GPU in report)"
+    max_tokens: 1024
+    input_cost_per_1m_usd: 0.08
+    output_cost_per_1m_usd: 0.24
+    strip_think_tags: false
+    enable_thinking: false
+
+  deepseek-r1-distill-qwen-14b:
+    family: deepseek
+    model_id: "deepseek/deepseek-r1-distill-qwen-14b"
+    provider: "openrouter"
+    base_url_env: "LLM_BASE_URL"
+    api_key_env: "LLM_API_KEY"
+    quantisation: "Q4_K_M / FP8 (provider-managed)"
+    hardware: "Hosted cloud GPU cluster (record exact endpoint/GPU in report)"
+    max_tokens: 2048
+    input_cost_per_1m_usd: 0.06
+    output_cost_per_1m_usd: 0.20
+    strip_think_tags: true
+    enable_thinking: true
+
+  gpt-oss-20b:
+    family: openai-oss
+    model_id: "openai/gpt-oss-20b"
+    provider: "openrouter"
+    base_url_env: "LLM_BASE_URL"
+    api_key_env: "LLM_API_KEY"
+    quantisation: "MXFP4 / FP8 (provider-managed)"
+    hardware: "Hosted cloud GPU cluster (record exact endpoint/GPU in report)"
+    max_tokens: 1024
+    input_cost_per_1m_usd: 0.05
+    output_cost_per_1m_usd: 0.20
+    strip_think_tags: false
+    reasoning_effort: "low"
