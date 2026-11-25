@@ -10,7 +10,7 @@ from typing import Any
 
 import tiktoken
 import yaml
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from pydantic import ValidationError
 
 from eval.metrics import summarize_records
@@ -159,18 +159,55 @@ def mock_valid_payload(case: dict[str, Any], prompt_id: str) -> dict[str, Any]:
     raise ValueError(f"Unknown prompt_id: {prompt_id}")
 
 
-def call_live_llm(model_cfg: dict[str, Any], prompt_text: str, temperature: float, seed: int) -> str:
-    base_url = os.environ.get(model_cfg.get("base_url_env", "LLM_BASE_URL"))
-    api_key = os.environ.get(model_cfg.get("api_key_env", "LLM_API_KEY"), "local-key")
-    client = OpenAI(base_url=base_url, api_key=api_key)
-    resp = client.chat.completions.create(
-        model=model_cfg["model_id"],
-        messages=[{"role": "user", "content": prompt_text}],
-        temperature=temperature,
-        max_tokens=model_cfg.get("max_tokens", 1024),
-        seed=seed,
-    )
-    return resp.choices[0].message.content or ""
+def call_live_llm(
+    model_cfg: dict[str, Any],
+    prompt_text: str,
+    temperature: float,
+    seed: int,
+    max_retries: int = 5,
+    pace_seconds: float = 2.5,
+) -> str:
+    base_url_env = model_cfg.get("base_url_env", "LLM_BASE_URL")
+    api_key_env = model_cfg.get("api_key_env", "LLM_API_KEY")
+
+    raw_base_url = os.environ.get(base_url_env, "").strip()
+    base_url = raw_base_url or None
+    api_key = os.environ.get(api_key_env, "local-key").strip()
+
+    client = OpenAI(base_url=base_url, api_key=api_key, timeout=45.0)
+
+    if pace_seconds > 0:
+        time.sleep(pace_seconds)
+
+    for attempt in range(max_retries):
+        try:
+            resp = client.chat.completions.create(
+                model=model_cfg["model_id"],
+                messages=[{"role": "user", "content": prompt_text}],
+                temperature=temperature,
+                max_tokens=model_cfg.get("max_tokens", 1024),
+                seed=seed,
+            )
+            msg = resp.choices[0].message
+            content = msg.content or ""
+            if not content:
+                content = (
+                    getattr(msg, "reasoning", None)
+                    or getattr(msg, "reasoning_content", None)
+                    or ""
+                )
+            return content
+        except RateLimitError:
+            if attempt == max_retries - 1:
+                raise
+            wait_seconds = 10 * (2 ** attempt)
+            print(
+                f"Rate limit (429) on {model_cfg['model_id']}; "
+                f"retrying in {wait_seconds}s (attempt {attempt + 1}/{max_retries})..."
+            )
+            time.sleep(wait_seconds)
+
+    return ""
 
 
 def main() -> None:
@@ -181,6 +218,8 @@ def main() -> None:
     parser.add_argument("--golden-set", default="data/golden_set.jsonl")
     parser.add_argument("--config", default="models/config.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Run offline schema/metric verification without live API calls")
+    parser.add_argument("--pace-seconds", type=float, default=2.5, help="Sleep delay between live API calls in seconds")
+    parser.add_argument("--max-retries", type=int, default=5, help="Max retries on HTTP 429 rate limits")
     args = parser.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
@@ -211,7 +250,14 @@ def main() -> None:
         if args.dry_run:
             raw_output = json.dumps(mock_valid_payload(case, args.prompt))
         else:
-            raw_output = call_live_llm(model_cfg, rendered_prompt, temperature=temperature, seed=seed)
+            raw_output = call_live_llm(
+                model_cfg,
+                rendered_prompt,
+                temperature=temperature,
+                seed=seed,
+                max_retries=args.max_retries,
+                pace_seconds=args.pace_seconds,
+            )
         latency_ms = (time.perf_counter() - t0) * 1000.0
         out_toks = len(enc.encode(raw_output))
 

@@ -1,0 +1,2 @@
+count,schema_valid_1st_pass_rate,schema_valid_after_repair_rate,total_rule_violations,category_accuracy,category_macro_f1,severity_accuracy,latency_p50_ms,latency_p95_ms,avg_input_tokens,avg_output_tokens,total_est_cost_usd,model,prompt_id,version,dry_run
+24,1.0,1.0,0,0.0,0.0,0.0,9638.64,15797.75,1434.5,119.6,0.0,groq-gpt-oss-120b,incident_parser,1.0.0,False
